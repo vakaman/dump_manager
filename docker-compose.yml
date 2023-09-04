@@ -1,0 +1,72 @@
+version: "4"
+
+volumes:
+    dump-db:
+
+networks:
+    dump:
+
+services:
+
+    dump-webserver:
+        image: dumptec/nginx:1.21.dev
+        hostname: dump-webserver
+        container_name: dump-webserver
+        working_dir: /app
+        user: "dump"
+        networks:
+            - dump
+        restart: "no"
+        depends_on:
+            - dump-api
+        ports:
+            - "80:8080"
+            - "443:8443"
+        volumes:
+            - ./app:/app
+            - ./docker/nginx/dev.conf:/opt/bitnami/nginx/conf/server_blocks/default.conf:ro
+            - ./docker/nginx/ssl/server.crt://etc/ssl/localhost.crt:ro
+            - ./docker/nginx/ssl/server.key://etc/ssl/localhost.key:ro
+
+    dump-api:
+        image: dumptec/php-fpm:dev-8.2-latest
+        hostname: dump-api
+        container_name: dump-api
+        working_dir: /app
+        user: "dump"
+        dns: 1.1.1.1
+        ports:
+            - "22001:22"
+        extra_hosts:
+            - "host.docker.internal:${PHPFPM_XDEBUG_HOST_IP}"
+        networks:
+            - dump
+        restart: "no"
+        volumes:
+            - ./app:/app
+        depends_on:
+            dump-database:
+                condition: service_healthy
+
+    dump-database:
+        image: postgres:14
+        hostname: dump-database
+        container_name: dump-database
+        environment:
+            - POSTGRES_USER=${DB_USERNAME}
+            - POSTGRES_PASSWORD=${DB_PASSWORD}
+            - POSTGRES_DB=${DB_DATABASE}
+            - PGDATA=/var/lib/postgresql/data/pgdata
+            - PGTZ=${TIMEZONE}
+        ports:
+            - "5431:5432"
+        networks:
+            - dump
+        restart: "no"
+        volumes:
+            - dump-db:/var/lib/postgresql/data/pgdata
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready"]
+            interval: 10s
+            timeout: 5s
+            retries: 5
